@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flight Booking – Missing Information Detector</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#14181f;--muted:#5b6472;--line:#dfe3ea;--accent:#2457d6;--ok:#17803d;--okbg:#e6f6ec;--miss:#b42318;--missbg:#fdeceb;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#181c24;--text:#e8ebf0;--muted:#9aa4b2;--line:#2a303b;--accent:#7aa2ff;--ok:#5fd38a;--okbg:#12281c;--miss:#ff8a80;--missbg:#2e1816;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1218;--card:#181c24;--text:#e8ebf0;--muted:#9aa4b2;--line:#2a303b;--accent:#7aa2ff;--ok:#5fd38a;--okbg:#12281c;--miss:#ff8a80;--missbg:#2e1816;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+h2{font-size:1.05rem;margin:0 0 12px}
+textarea{width:100%;min-height:90px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;resize:vertical}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 14px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{font-size:.85rem;padding:5px 10px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:14px 0}
+.f{border-radius:10px;padding:10px 12px;border:1px solid var(--line)}
+.f small{display:block;color:var(--muted);font-size:.78rem}
+.f b{font-size:1.02rem}
+.f.ok{background:var(--okbg);border-color:transparent}.f.ok b{color:var(--ok)}
+.f.miss{background:var(--missbg);border-color:transparent}.f.miss b{color:var(--miss)}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-x:auto;max-height:420px}
+.note{color:var(--muted);font-size:.85rem;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>✈️ Flight Booking – Missing Information Detector</h1>
+<p class="sub">Extracts what the customer stated, flags missing mandatory fields, and asks only for what’s missing. Nothing is assumed or invented.</p>
+
+<section>
+<h2>1. Customer message</h2>
+<textarea id="inp" placeholder="Type the customer’s message…">I am Rahul. I want to book a flight from Bengaluru to Delhi.</textarea>
+<div class="row">
+<button class="primary" id="go">Analyze message</button>
+<button class="chip" data-ex="I am Rahul. I want to book a flight from Bengaluru to Delhi.">Example: Rahul</button>
+<button class="chip" data-ex="My name is Priya Nair. Book 2 tickets from Mumbai to Chennai on 15 December 2026 in Business class.">Example: all fields</button>
+<button class="chip" data-ex="Need a flight to Goa tomorrow for 3 people.">Example: sparse</button>
+</div>
+</section>
+
+<section>
+<h2>2. Result</h2>
+<div class="grid" id="cards"></div>
+<pre id="out"></pre>
+<div class="row"><button id="copyOut">Copy output</button></div>
+</section>
+
+</main>
+
+<script>
+const PROMPT = `You are an intelligent data-collection assistant for a flight booking system.
+
+TASK
+Read the customer's message and check whether all 6 mandatory fields are present:
+1. Passenger Name
+2. Departure City
+3. Destination City
+4. Travel Date
+5. Number of Passengers
+6. Travel Class (Economy, Premium Economy, Business, First Class)
+
+RULES
+1. Extract every field the customer explicitly stated.
+2. NEVER assume, guess, infer or invent a value. If it is not stated, mark it "Missing".
+3. Identify every missing mandatory field – do not skip any.
+4. Ask one clear, polite question per missing field, as a numbered list.
+5. Do NOT ask for information the customer already provided.
+6. If all six fields are present, respond ONLY with:
+   All required information has been provided.
+7. Do not add greetings, explanations or extra text beyond the output format.
+
+OUTPUT FORMAT
+Passenger Name: <value or Missing>
+Departure City: <value or Missing>
+Destination City: <value or Missing>
+Travel Date: <value or Missing>
+Number of Passengers: <value or Missing>
+Travel Class: <value or Missing>
+
+Please provide the following missing information:
+1. <question for first missing field>
+2. <question for next missing field>
+...
+
+EXAMPLE
+Input: "I am Rahul. I want to book a flight from Bengaluru to Delhi."
+Output:
+Passenger Name: Rahul
+Departure City: Bengaluru
+Destination City: Delhi
+Travel Date: Missing
+Number of Passengers: Missing
+Travel Class: Missing
+
+Please provide the following missing information:
+1. What is your preferred travel date?
+2. How many passengers will be travelling?
+3. Which travel class do you prefer: Economy, Premium Economy, Business, or First Class?
+
+Now process this customer message:
+"{{CUSTOMER_MESSAGE}}"`;
+
+const FIELDS = ["Passenger Name","Departure City","Destination City","Travel Date","Number of Passengers","Travel Class"];
+const QUESTIONS = {
+  "Passenger Name":"May I have the passenger’s full name?",
+  "Departure City":"Which city will you be departing from?",
+  "Destination City":"Which city would you like to travel to?",
+  "Travel Date":"What is your preferred travel date?",
+  "Number of Passengers":"How many passengers will be travelling?",
+  "Travel Class":"Which travel class do you prefer: Economy, Premium Economy, Business, or First Class?"
+};
+const STOP = new Set("on for in with next tomorrow today by at via around and my we please economy business first premium leaving departing travelling traveling i am is date class flight flights ticket tickets seat seats the a an this that need want would like to from then also pls".split(" "));
+const NUM = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+const MON = "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*";
+const NW = "\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten";
+
+function cut(s){
+  const out=[];
+  for(const w of s.trim().split(/\s+/)){
+    if(/[,.;!?]$/.test(w)){ const c=w.replace(/[,.;!?]+$/,""); if(c&&!STOP.has(c.toLowerCase())) out.push(c); break; }
+    if(STOP.has(w.toLowerCase())||out.length>=3) break;
+    out.push(w);
+  }
+  return out.join(" ");
+}
+const cap = s => s.replace(/\b[a-z]/g,c=>c.toUpperCase());
+const toNum = s => /^\d/.test(s)?parseInt(s,10):NUM[s.toLowerCase()];
+
+function extract(t){
+  const r = {};
+  // Name
+  let m = t.match(/(?:\b[Ii] am|\b[Ii]['’]m|\b[Mm]y name is|\b[Tt]his is|\b[Nn]ame is|\b[Pp]assenger(?: name)?(?: is|:)|\b[Nn]ame:)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})/);
+  if(m) r["Passenger Name"]=m[1];
+  // Cities
+  let from=null,to=null;
+  m = t.match(/\bfrom\s+(.+?)\s+to\s+(.+)/i);
+  if(m){ from=cut(m[1]); to=cut(m[2]); }
+  else{
+    m = t.match(/\b(?:from|leaving|departing(?: from)?|depart(?: from)?)\s+(.+)/i); if(m) from=cut(m[1]);
+    m = t.match(/\b(?:fly(?:ing)?|travel(?:l)?ing|going|go|flights?|tickets?|trip)\s+to\s+(.+)/i) || t.match(/\bdestination(?: is|:)?\s+(.+)/i);
+    if(m) to=cut(m[1]);
+  }
+  if(from) r["Departure City"]=cap(from);
+  if(to) r["Destination City"]=cap(to);
+  // Date
+  const dateRes=[
+    new RegExp("\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?"+MON+"(?:,?\\s+\\d{4})?","i"),
+    new RegExp("\\b"+MON+"\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?","i"),
+    /\b\d{4}-\d{2}-\d{2}\b/, /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}\b/,
+    /\b(?:day after tomorrow|tomorrow|today|(?:next|this)\s+(?:week|weekend|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i
+  ];
+  for(const re of dateRes){ m=t.match(re); if(m){ r["Travel Date"]=m[0].trim(); break; } }
+  // Passengers
+  m = t.match(new RegExp("\\b("+NW+")\\s+(?:adults?|passengers?|people|persons?|travell?ers?|tickets?|seats?|pax|of us)\\b","i"))
+   || t.match(new RegExp("\\bfamily of\\s+("+NW+")\\b","i"))
+   || t.match(new RegExp("\\bfor\\s+("+NW+")\\s*(?=[.,!?]|$)","i"));
+  if(m) r["Number of Passengers"]=String(toNum(m[1]));
+  else if(/\b(just me|only me|alone|solo)\b/i.test(t)) r["Number of Passengers"]="1";
+  // Class
+  if(/\bpremium\s+economy\b/i.test(t)) r["Travel Class"]="Premium Economy";
+  else if(/\beconomy\b/i.test(t)) r["Travel Class"]="Economy";
+  else if(/\bbusiness\b/i.test(t) && /\b(class|business)\b/i.test(t) && !/business (trip|meeting|purposes?)/i.test(t)) r["Travel Class"]="Business";
+  else if(/\bfirst[\s-]class\b/i.test(t)) r["Travel Class"]="First Class";
+  return r;
+}
+
+const $ = id => document.getElementById(id);
+function run(){
+  const text = $("inp").value;
+  const r = extract(text);
+  const missing = FIELDS.filter(f=>!r[f]);
+  $("cards").innerHTML = FIELDS.map(f=>`<div class="f ${r[f]?"ok":"miss"}"><small>${f}</small><b>${r[f]?escapeHtml(r[f]):"Missing"}</b></div>`).join("");
+  let out;
+  if(!missing.length){ out = "All required information has been provided."; }
+  else{
+    out = FIELDS.map(f=>`${f}: ${r[f]||"Missing"}`).join("\n") +
+      "\n\nPlease provide the following missing information:\n" +
+      missing.map((f,i)=>`${i+1}. ${QUESTIONS[f]}`).join("\n");
+  }
+  $("out").textContent = out;
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function copy(id,btn){
+  const t=$(id).textContent, old=btn.textContent;
+  const done=()=>{btn.textContent="Copied ✓";setTimeout(()=>btn.textContent=old,1400)};
+  try{ navigator.clipboard.writeText(t).then(done,()=>fallback(t,done)); }catch(e){ fallback(t,done); }
+}
+function fallback(t,done){
+  const a=document.createElement("textarea");a.value=t;document.body.appendChild(a);a.select();
+  try{document.execCommand("copy");done();}catch(e){}a.remove();
+}
+$("go").onclick=run;
+$("copyOut").onclick=e=>copy("out",e.target);
+document.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{$("inp").value=b.dataset.ex;run();});
+run();
+</script>
+</body>
+</html>
